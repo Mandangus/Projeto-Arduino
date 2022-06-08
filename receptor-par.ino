@@ -9,7 +9,7 @@
 #define SET_RTS_BIT(b) RTS_BIT = b
 
 #define SEND_CTS_BIT() digitalWrite(PINO_CTS,CTS_BIT) 
-#define RECV_RTS_BIT() (CTS_BIT = digitalRead(PINO_RTS))
+#define RECV_RTS_BIT() (RTS_BIT = digitalRead(PINO_RTS))
 #include "Temporizador.h"
 
 #define FRAME_LENGTH 11
@@ -24,12 +24,42 @@ bool RTS_BIT = false; /* Ready for transmission */
 bool CTS_BIT = false; /* Confirm transmission */
 
 void reciveNextFrameBit() {
-  digitalRead(PINO_TX, frame[frame_index]);
+  frame[frame_index]=digitalRead(PINO_TX);
 
   Serial.print(frame[frame_index]);
 
   ++frame_index;
 
+  if (frame_index == FRAME_LENGTH){
+    nextCharOnMsg();
+  }
+}
+
+char buildChar(){
+  // ler do 1 ao 8
+  int data_frame[8];
+  for (int i = 0; i < 8; i++){
+    data_frame[i] = frame[i+1];
+  }
+  // converter os bits de dados para char
+  char tmp = 0;
+  for (int i = 0; i < 8; i++){
+    tmp |= data_frame[i] << (8-1-i); //slot each bit in where it belongs 
+  }
+
+  return tmp;
+}
+
+void nextCharOnMsg(){
+  // builda o char a partir do frame
+  char c = buildChar();
+  // seta o frame index pra 0
+  frame_index = 0;
+  //checa paridade
+  int parity = bitParidade(c);
+  if(parity){
+    message[message_index++] = c;
+  }
 }
 
 // Calcula bit de paridade - Par ou impar
@@ -42,26 +72,29 @@ bool bitParidade(char data){
 
   return parity;
 }
-
+void showMsg(){
+  if (message_index < MESSAGE_MAX_LENGTH - 1 ){
+    message[++message_index] = '\0';
+  }
+  Serial.println(message);
+  message_index = 0;
+}
 // Rotina de interrupcao do timer1
 // O que fazer toda vez que 1s passou?
 ISR(TIMER1_COMPA_vect){
 
+  SEND_CTS_BIT();
+  
   if (!RECV_RTS_BIT()){
-    if(CTS_BIT){
-      SET_CTS_BIT(false)
-      // construir mansagem do frame
-      char msg = buildChar()
-      //checar paridade
-      int parity = bitParidade(msg)
-      if(parity){
-        Serial.print(msg)
-      }
+
+    // if acabou a transmissão
+    if (message_index != 0){
+      showMsg();
+      SET_CTS_BIT(false);
     }
     return;
   }
   SET_CTS_BIT(true);
-  SEND_CTS_BIT();
 
 
   reciveNextFrameBit();
@@ -88,5 +121,5 @@ void setup(){
 
 // O loop() eh executado continuamente (como um while(true))
 void loop ( ) {
-  if(CTS_BIT){}
+
 }
